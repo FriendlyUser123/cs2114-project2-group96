@@ -75,7 +75,7 @@ At the menu, type a number:
 6. **Practice hardest cards** — quizzes you on cards missed 3+ times. Practice scores are not saved.
 7. **Quit**
 
-In both versions, answers ignore case and extra spaces, so "Cards", "cards", and " CARDS " all count as
+In both versions, answers ignore case and spaces before or after the answer, so "Cards", "cards", and " CARDS " all count as
 right. Your score counts only the cards you answered right the first time each one came up.
 
 ## Design
@@ -114,7 +114,7 @@ n = cards in the deck, m = total misses recorded, s = number of scores, h = numb
 | `Deck.copyCards` | O(n), `toArray` plus n O(1) `add` calls back to front | O(n) | yes |
 | `QuizSession(deck, random)` | O(n), `copyCards` | O(n) | yes |
 | `QuizSession.nextCard` | O(n), `removeAt(random index)` | O(n) | yes |
-| `QuizSession.submitAnswer` | **O(1)**: `isCorrect` plus two O(1) `add` calls | O(n) | **no, it's faster.** We now re-add with `add()` instead of `addToEnd()`, and check a retry flag instead of `missed.contains`. |
+| `QuizSession.submitAnswer` | **O(1) in deck size**: `isCorrect`, `copy()`, and two O(1) `add` calls (the string work is bounded by the 500-character limit) | O(n) | **no, it's faster.** We now re-add with `add()` instead of `addToEnd()`, and check a retry flag instead of `missed.contains`. |
 | `QuizSession.getScorePercent` | O(1) | O(1) | yes |
 | `ScoreHistory.record` / `getPrevious` / `getCount` | O(1) | O(1) | yes |
 | `ScoreHistory.getBest` / `getAverage` / `getScores` | O(s), `toArray` and one pass | O(n) | yes |
@@ -133,7 +133,7 @@ n = cards in the deck, m = total misses recorded, s = number of scores, h = numb
 | `CramCardsGui.submitAnswer` | O(n) per card, like the terminal quiz; the last answer also rebuilds the results and saves | (new class) | — |
 | `CramCardsGui.practiceHardest` | O(n·m + h²), then a quiz | (new class) | — |
 
-Terminal deck operations are O(n). The n·m + h² terms come from `MissTracker.buildHardDeck`, which
+Changing the deck is O(n); each change is then saved, which adds the save's cost. The n·m + h² terms come from `MissTracker.buildHardDeck`, which
 the window reruns to keep the Practice hardest cards button up to date; the n² terms come from saving
 and loading, which walk the deck once per card. That's fine at flashcard-deck sizes.
 
@@ -223,7 +223,8 @@ in `LinkedChainTest`.
 - **One save file per folder.** Both versions save to `cramcards-data.txt` in the folder they run from,
   so there's one deck per folder, and running both versions at the same time would overwrite each other's saves.
 - **Hard cards never leave the hard deck.** `MissTracker` only adds misses, so a card stays hard (missed
-  3+ times) even after you answer it right in practice. Only deleting the card (or the save file) removes it.
+  3+ times) even after you answer it right in practice. Deleting the card hides it from the hard deck, but its
+  misses stay in the tracker until the app restarts, so re-adding it in the same session makes it hard again.
 - **Only one deck.** All cards go into a single deck; there's no way to keep separate decks (for example,
   one per class) and pick which one to study.
 - **Bad lines in a save file are dropped on the next save.** Loading skips them (and says how many), and
@@ -242,8 +243,8 @@ The MVP and all three stretch goals are done. Remaining work, in order:
 | 1 | Update the system diagram for D4 (add `DeckStore`, `CramCardsGui`, and the `String` chain) and put it in the repo | Aditya Banerjee | — |
 | 2 | Change the terminal's quit word to `:quit` so no real answer can collide with it | Aditya Banerjee | `CramCardsAppTest.testQuizFlowAnswerIsQuit` (a card whose answer is "quit" can be answered); update `testQuizFlowBadInput` |
 | 3 | Let the terminal's Delete a card take the number View cards shows, using `Deck.removeAt` | Aditya Banerjee | `CramCardsAppTest.testDeleteByNumber`, plus out-of-range and non-number bad cases |
-| 4 | **Hard cards can "graduate":** each right answer in hardest-cards practice removes one miss key with `LinkedChain.remove(key)`, through a new `MissTracker.recordRight(Flashcard)`, so a card leaves the hard deck once its count drops below 3 | Aditya Banerjee | `MissTrackerTest.testRecordRight` (count drops by one), `testRecordRightNotThere` (a card with no misses stays at 0; nothing breaks), `testRecordRightNull`; `CramCardsGuiTest.testPracticeGraduates` and `CramCardsAppTest.testPracticeGraduates` (a hard card answered right enough times is no longer offered) |
-| 5 | **Multiple decks:** a new `DeckLibrary` class holds named decks in a `LinkedChain<Deck>` (a fourth element type through the same chain) with `createDeck`, `renameDeck`, `deleteDeck`, `getDeck`, and `listNames`. The window gets a deck picker; the terminal gets a "Switch deck" menu choice; each quiz, score history, and hard deck belongs to the chosen deck. `DeckStore` adds a `DECK name` line before each deck's records, and old one-deck save files load into a deck called "My cards". | Aditya Banerjee | `DeckLibraryTest`: create, rename, delete, and switch decks; bad input: blank or duplicate names, renaming or deleting a deck that isn't there, deleting the last deck, an empty library. `DeckStoreTest.testSaveLoadSeveralDecks` and `testLoadOldOneDeckFile`. `CramCardsGuiTest.testSwitchDeck` and `CramCardsAppTest.testSwitchDeckFlow` (normal and bad menu input) |
+| 4 | **Hard cards can "graduate":** each right answer in hardest-cards practice removes one miss key with `LinkedChain.remove(key)`, through a new `MissTracker.recordRight(Flashcard)`, called only for first-try right answers so a miss followed by its retry doesn't cancel out, so a card leaves the hard deck once its count drops below 3 | Aditya Banerjee | `MissTrackerTest.testRecordRight` (count drops by one), `testRecordRightNotThere` (a card with no misses stays at 0; nothing breaks), `testRecordRightNull`; `CramCardsGuiTest.testPracticeGraduates` and `CramCardsAppTest.testPracticeGraduates` (a hard card answered right enough times is no longer offered) |
+| 5 | **Multiple decks:** `Deck` gets a name, and each deck gets its own `ScoreHistory` and `MissTracker`. A new `DeckLibrary` class holds the decks in a `LinkedChain<Deck>` (a fourth element type through the same chain), finding decks by name with `toArray` and a scan, with `createDeck`, `renameDeck`, `deleteDeck`, `getDeck`, and `listNames`. The window gets a deck picker; the terminal gets a "Switch deck" menu choice; each quiz, score history, and hard deck belongs to the chosen deck. `DeckStore` adds a `DECK name` line before each deck's records, and old one-deck save files load into a deck called "My cards". | Aditya Banerjee | `DeckLibraryTest`: create, rename, delete, and switch decks; bad input: blank or duplicate names, renaming or deleting a deck that isn't there, deleting the last deck, an empty library. `DeckStoreTest.testSaveLoadSeveralDecks` and `testLoadOldOneDeckFile`. `CramCardsGuiTest.testSwitchDeck` and `CramCardsAppTest.testSwitchDeckFlow` (normal and bad menu input) |
 | 6 | Final slides and a rehearsed demo: add a card, a quiz with a miss, results, a bad input, hardest cards, and closing and reopening to show saving | Aditya Banerjee | — |
 
 **Stretch goals from our scope:**
@@ -282,7 +283,7 @@ Reflection table: the retry flag, re-adding with `add()`, enforcing the 500-char
 limit in `Flashcard`, `hashCode`, and the message constants.
 
 We then checked the result by:
-- running all 120 tests in Eclipse 2023-09;
+- running all 120 tests with Eclipse 2023-09's compiler and Java runtime;
 - confirming that the tests execute every line and every branch of every class except the "no screen"
   branch above (measured with JaCoCo, the tool behind Eclipse's Coverage view);
 - running both versions by hand through each feature and each bad-input case, including closing and
