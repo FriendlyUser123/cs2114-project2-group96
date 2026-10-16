@@ -283,7 +283,7 @@ Reflection table: the retry flag, re-adding with `add()`, enforcing the 500-char
 limit in `Flashcard`, `hashCode`, and the message constants.
 
 We then checked the result by:
-- running all 120 tests with Eclipse 2023-09's compiler and Java runtime;
+- running all 120 tests in Eclipse 2023-09;
 - confirming that the tests execute every line and every branch of every class except the "no screen"
   branch above (measured with JaCoCo, the tool behind Eclipse's Coverage view);
 - running both versions by hand through each feature and each bad-input case, including closing and
